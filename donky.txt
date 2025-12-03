@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+  <meta charset="UTF-8" />
+  <title>لعبة سباق الحمير</title>
+  <style>
+    body {
+      margin: 0;
+      background: #222;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      font-family: Tahoma, Arial, sans-serif;
+    }
+
+    #gameContainer {
+      border: 3px solid #fff;
+      box-shadow: 0 0 20px #000;
+      position: relative;
+    }
+
+    #ui {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      color: #fff;
+      font-size: 18px;
+      text-shadow: 0 0 5px #000;
+    }
+
+    #message {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      color: #fff;
+      font-size: 26px;
+      text-align: center;
+      text-shadow: 0 0 10px #000;
+      display: none;
+    }
+  </style>
+</head>
+<body>
+  <div id="gameContainer">
+    <canvas id="game" width="800" height="400"></canvas>
+    <div id="ui">السكور: <span id="score">0</span></div>
+    <div id="message"></div>
+  </div>
+
+  <script>
+    const canvas = document.getElementById("game");
+    const ctx = canvas.getContext("2d");
+
+    const scoreEl = document.getElementById("score");
+    const messageEl = document.getElementById("message");
+
+    const GROUND_Y = 320;      // مستوى الأرض
+    const DONKEY_X = 120;      // مكان الحمار في محور X
+    const GRAVITY = 0.6;       // الجاذبية
+    const JUMP_FORCE = -12;    // قوة القفز
+    const HOLE_MIN_WIDTH = 70;
+    const HOLE_MAX_WIDTH = 150;
+    const HOLE_GAP_MIN = 200;  // أقل مسافة بين الحفر
+    const HOLE_GAP_MAX = 400;  // أكبر مسافة بين الحفر
+
+    let donkey = {
+      x: DONKEY_X,
+      y: GROUND_Y - 50,
+      width: 60,
+      height: 50,
+      vy: 0,
+      onGround: true
+    };
+
+    let holes = [];
+    let speed = 5;
+    let score = 0;
+    let gameOver = false;
+
+    function resetGame() {
+      donkey.y = GROUND_Y - donkey.height;
+      donkey.vy = 0;
+      donkey.onGround = true;
+      holes = [];
+      score = 0;
+      scoreEl.textContent = "0";
+      speed = 5;
+      gameOver = false;
+      messageEl.style.display = "none";
+      spawnInitialHoles();
+      lastTime = performance.now();
+      requestAnimationFrame(loop);
+    }
+
+    // إنشاء الحفر بشكل أولي
+    function spawnInitialHoles() {
+      let x = 400;
+      for (let i = 0; i < 5; i++) {
+        const width = randomRange(HOLE_MIN_WIDTH, HOLE_MAX_WIDTH);
+        const gap = randomRange(HOLE_GAP_MIN, HOLE_GAP_MAX);
+        holes.push({
+          x: x,
+          width: width,
+          passed: false
+        });
+        x += width + gap;
+      }
+    }
+
+    function randomRange(min, max) {
+      return Math.random() * (max - min) + min;
+    }
+
+    // عند تجاوز الحفرة نضيف واحدة جديدة في النهاية
+    function recycleHoles() {
+      // لو خرجت حفرة من الشاشة بالكامل، نحركها لنهاية المسار
+      for (let i = 0; i < holes.length; i++) {
+        if (holes[i].x + holes[i].width < 0) {
+          const last = holes.reduce((a, b) => (a.x > b.x ? a : b));
+          const width = randomRange(HOLE_MIN_WIDTH, HOLE_MAX_WIDTH);
+          const gap = randomRange(HOLE_GAP_MIN, HOLE_GAP_MAX);
+          holes[i].x = last.x + last.width + gap;
+          holes[i].width = width;
+          holes[i].passed = false;
+        }
+      }
+    }
+
+    function update(dt) {
+      if (gameOver) return;
+
+      // فيزياء الحمار
+      donkey.vy += GRAVITY;
+      donkey.y += donkey.vy;
+
+      // الأرض
+      if (donkey.y + donkey.height >= GROUND_Y) {
+        donkey.y = GROUND_Y - donkey.height;
+        donkey.vy = 0;
+        donkey.onGround = true;
+      } else {
+        donkey.onGround = false;
+      }
+
+      // تحريك الحفر
+      for (const hole of holes) {
+        hole.x -= speed;
+
+        // إذا تجاوز الحفرة بدون سقوط → زيادة السكور
+        if (!hole.passed && DONKEY_X > hole.x + hole.width) {
+          hole.passed = true;
+          score++;
+          scoreEl.textContent = score;
+          // كل عدة نقاط نرفع السرعة قليلاً
+          if (score % 5 === 0) {
+            speed += 0.7;
+          }
+        }
+
+        // اختبار السقوط في الحفرة
+        const donkeyFront = DONKEY_X + donkey.width - 10;
+        const donkeyBack = DONKEY_X + 10;
+
+        const inHoleX =
+          donkeyFront > hole.x && donkeyBack < hole.x + hole.width;
+
+        const belowGround = donkey.y + donkey.height >= GROUND_Y;
+
+        if (inHoleX && belowGround) {
+          endGame();
+        }
+      }
+
+      recycleHoles();
+    }
+
+    function endGame() {
+      gameOver = true;
+      messageEl.innerHTML =
+        "سقط الحمار في الحفرة!<br>السكور: " +
+        score +
+        "<br><small>اضغط مسطرة لإعادة اللعب</small>";
+      messageEl.style.display = "block";
+    }
+
+    function draw() {
+      // خلفية
+      ctx.fillStyle = "#1b1b2f";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // السماء البعيدة
+      let gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+      gradient.addColorStop(0, "#232752");
+      gradient.addColorStop(1, "#1b1b2f");
+      ctx.fillStyle = gradient;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // الأرض
+      ctx.fillStyle = "#3b2f2f";
+      ctx.fillRect(0, GROUND_Y, canvas.width, canvas.height - GROUND_Y);
+
+      // خط الطريق
+      ctx.strokeStyle = "#fff";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(0, GROUND_Y);
+      ctx.lineTo(canvas.width, GROUND_Y);
+      ctx.stroke();
+
+      // رسم الحفر (ثقوب سوداء)
+      for (const hole of holes) {
+        ctx.fillStyle = "#000";
+        ctx.fillRect(hole.x, GROUND_Y, hole.width, canvas.height - GROUND_Y);
+      }
+
+      // رسم الحمار (مستطيل بسيط يمكن استبداله بصورة)
+      // جسم
+      ctx.fillStyle = "#c48f
